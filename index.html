@@ -349,58 +349,24 @@
     startLoader();
 
     try {
-      // Phase 1 (primary): Deep paginate from:username — always works, no paid features
+      // Strategy: scan year by year from 2006 using since/until date filters
+      // This is the only reliable way to find the true first tweet
       var bestTweet = null;
-      var fbQuery = 'from:' + username;
+      var currentYear = new Date().getFullYear();
 
-      document.getElementById('loaderText').textContent = 'Fetching tweets...';
+      for (var yr = 2006; yr <= currentYear; yr++) {
+        var since = yr + '-01-01';
+        var until = (yr + 1) + '-01-01';
+        var dq = 'from:' + username + ' since:' + since + ' until:' + until;
+        document.getElementById('loaderText').textContent = 'Scanning ' + yr + '...';
 
-      var fbRes = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(fbQuery) + '&queryType=Latest');
-      if (!fbRes.ok) throw new Error('HTTP ' + fbRes.status);
-      var fbData = await fbRes.json();
-
-      if (!fbData.tweets || fbData.tweets.length === 0) {
-        stopLoader();
-        setStatus('No tweets found for @' + username + '. Check the username and try again.', 'error');
-        btn.disabled = false;
-        return;
-      }
-
-      var fbTweets = fbData.tweets.slice();
-      var fbCursor = fbData.next_cursor || fbData.cursor || null;
-      var fbPages = 0;
-
-      while (fbCursor && fbPages < 20) {
-        fbPages++;
-        document.getElementById('loaderText').textContent = 'Digging deeper... (' + fbTweets.length + ' tweets scanned)';
-        try {
-          var fnr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(fbQuery) + '&queryType=Latest&cursor=' + encodeURIComponent(fbCursor));
-          if (!fnr.ok) break;
-          var fnd = await fnr.json();
-          if (!fnd.tweets || fnd.tweets.length === 0) break;
-          fbTweets = fbTweets.concat(fnd.tweets);
-          fbCursor = fnd.next_cursor || fnd.cursor || null;
-        } catch(e) { break; }
-      }
-
-      fbTweets.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
-      bestTweet = fbTweets[0];
-
-      // Phase 2 (bonus): Try date-windowed search to go even further back if credits allow
-      document.getElementById('loaderText').textContent = 'Going even further back...';
-      var years = [2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,
-                   2016,2017,2018,2019,2020,2021,2022,2023,2024,2025,2026];
-
-      for (var yi = 0; yi < years.length; yi++) {
-        var yr = years[yi];
-        var dq = 'from:' + username + ' since:' + yr + '-01-01 until:' + (yr+1) + '-01-01';
         try {
           var dr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(dq) + '&queryType=Latest');
-          if (!dr.ok) break; // 402 or error — stop trying date search
+          if (!dr.ok) throw new Error('HTTP ' + dr.status);
           var dd = await dr.json();
           if (!dd.tweets || dd.tweets.length === 0) continue;
 
-          // Found tweets in an earlier year — collect and compare
+          // Found the first year with tweets — now narrow to month
           var yrTweets = dd.tweets.slice();
           var yc = dd.next_cursor || dd.cursor || null;
           var yp = 0;
@@ -417,17 +383,53 @@
           }
 
           yrTweets.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
-          // Use this if it predates our current best
-          if (!bestTweet || new Date(yrTweets[0].createdAt) < new Date(bestTweet.createdAt)) {
-            bestTweet = yrTweets[0];
+          bestTweet = yrTweets[0];
+
+          // Narrow to month within this year
+          for (var m = 1; m <= 12; m++) {
+            var ms = yr + '-' + (m < 10 ? '0' + m : m) + '-01';
+            var me = m < 12
+              ? yr + '-' + ((m + 1) < 10 ? '0' + (m + 1) : (m + 1)) + '-01'
+              : (yr + 1) + '-01-01';
+            var mq = 'from:' + username + ' since:' + ms + ' until:' + me;
+            document.getElementById('loaderText').textContent = 'Narrowing to ' + ms.slice(0, 7) + '...';
+
+            try {
+              var mr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(mq) + '&queryType=Latest');
+              if (!mr.ok) continue;
+              var md = await mr.json();
+              if (!md.tweets || md.tweets.length === 0) continue;
+
+              var mTweets = md.tweets.slice();
+              var mc = md.next_cursor || md.cursor || null;
+              var mp = 0;
+              while (mc && mp < 5) {
+                mp++;
+                try {
+                  var mnr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(mq) + '&queryType=Latest&cursor=' + encodeURIComponent(mc));
+                  if (!mnr.ok) break;
+                  var mnd = await mnr.json();
+                  if (!mnd.tweets || mnd.tweets.length === 0) break;
+                  mTweets = mTweets.concat(mnd.tweets);
+                  mc = mnd.next_cursor || mnd.cursor || null;
+                } catch(e) { break; }
+              }
+
+              mTweets.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
+              bestTweet = mTweets[0];
+              break; // found first month, stop
+            } catch(e) { continue; }
           }
-          break; // found earliest year, stop
-        } catch(e) { break; }
+          break; // found first year, stop
+        } catch(e) {
+          // If any error stop date search
+          break;
+        }
       }
 
       if (!bestTweet) {
         stopLoader();
-        setStatus('Could not retrieve tweets for @' + username + '.', 'error');
+        setStatus('No tweets found for @' + username + '. Check the username.', 'error');
         btn.disabled = false;
         return;
       }
@@ -513,3 +515,4 @@
 </script>
 </body>
 </html>
+
