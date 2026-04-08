@@ -338,6 +338,37 @@
     document.getElementById('loader').classList.remove('active');
   }
 
+  // Request queue to avoid rate limiting
+  var requestQueue = [];
+  var isProcessing = false;
+
+  function sleep(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+  }
+
+  async function queuedFetch(url) {
+    return new Promise(function(resolve, reject) {
+      requestQueue.push({ url: url, resolve: resolve, reject: reject });
+      if (!isProcessing) processQueue();
+    });
+  }
+
+  async function processQueue() {
+    if (isProcessing) return;
+    isProcessing = true;
+    while (requestQueue.length > 0) {
+      var item = requestQueue.shift();
+      try {
+        var res = await fetch(item.url);
+        item.resolve(res);
+      } catch(e) {
+        item.reject(e);
+      }
+      if (requestQueue.length > 0) await sleep(1500); // 600ms between requests
+    }
+    isProcessing = false;
+  }
+
   async function findOrigin() {
     var username = document.getElementById('usernameInput').value.trim().replace('@','');
     if (!username) { setStatus('Enter a username first.', 'error'); return; }
@@ -349,107 +380,94 @@
     startLoader();
 
     try {
-      // Strategy: scan year by year from 2006 using since/until date filters
-      // This is the only reliable way to find the true first tweet
       var bestTweet = null;
-      var currentYear = new Date().getFullYear();
+      var baseQuery = 'from:' + username + ' -filter:replies';
 
-      for (var yr = 2006; yr <= currentYear; yr++) {
-        var since = yr + '-01-01';
-        var until = (yr + 1) + '-01-01';
-        var dq = 'from:' + username + ' -filter:replies since:' + since + ' until:' + until;
-        document.getElementById('loaderText').textContent = 'Scanning ' + yr + '...';
+      // Step 1: Fetch user profile to get exact join year — 1 request only
+      document.getElementById('loaderText').textContent = 'Looking up @' + username + '...';
+      var uRes = await queuedFetch(WORKER_URL + '/user?userName=' + encodeURIComponent(username));
+      if (!uRes.ok) throw new Error('User @' + username + ' not found. Check the username.');
+      var uData = await uRes.json();
+      var uInfo = uData.data || uData;
+      if (!uInfo || (!uInfo.createdAt && !uInfo.userName)) throw new Error('Could not load profile for @' + username);
 
-        try {
-          var dr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(dq) + '&queryType=Latest');
-          if (!dr.ok) throw new Error('HTTP ' + dr.status);
-          var dd = await dr.json();
-          if (!dd.tweets || dd.tweets.length === 0) continue;
+      var joinDate = new Date(uInfo.createdAt);
+      var joinYear = joinDate.getFullYear();
+      var joinMonth = joinDate.getMonth() + 1;
+      document.getElementById('loaderText').textContent = 'Joined ' + joinYear + '. Searching first post...';
 
-          // Found the first year with tweets — now narrow to month
-          var yrTweets = dd.tweets.slice();
-          var yc = dd.next_cursor || dd.cursor || null;
-          var yp = 0;
-          while (yc && yp < 5) {
-            yp++;
-            try {
-              var ynr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(dq) + '&queryType=Latest&cursor=' + encodeURIComponent(yc));
-              if (!ynr.ok) break;
-              var ynd = await ynr.json();
-              if (!ynd.tweets || ynd.tweets.length === 0) break;
-              yrTweets = yrTweets.concat(ynd.tweets);
-              yc = ynd.next_cursor || ynd.cursor || null;
-            } catch(e) { break; }
-          }
+      // Step 2: Search the exact join year — 1 request
+      var yq = baseQuery + ' since:' + joinYear + '-01-01 until:' + (joinYear+1) + '-01-01';
+      var yr_res = await queuedFetch(WORKER_URL + '/search?query=' + encodeURIComponent(yq) + '&queryType=Latest');
 
-          yrTweets.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
-          bestTweet = yrTweets[0];
+      if (yr_res.ok) {
+        var yr_data = await yr_res.json();
+        if (yr_data.tweets && yr_data.tweets.length > 0) {
 
-          // Narrow to month within this year
-          for (var m = 1; m <= 12; m++) {
-            var ms = yr + '-' + (m < 10 ? '0' + m : m) + '-01';
-            var me = m < 12
-              ? yr + '-' + ((m + 1) < 10 ? '0' + (m + 1) : (m + 1)) + '-01'
-              : (yr + 1) + '-01-01';
-            var mq = 'from:' + username + ' -filter:replies since:' + ms + ' until:' + me;
-            document.getElementById('loaderText').textContent = 'Narrowing to ' + ms.slice(0, 7) + '...';
+          // Step 3: Narrow month by month starting from join month — usually 1-3 requests
+          for (var mo = joinMonth; mo <= 12; mo++) {
+            var ms = joinYear + '-' + (mo < 10 ? '0'+mo : mo) + '-01';
+            var me = mo < 12
+              ? joinYear + '-' + ((mo+1) < 10 ? '0'+(mo+1) : (mo+1)) + '-01'
+              : (joinYear+1) + '-01-01';
+            var mq = baseQuery + ' since:' + ms + ' until:' + me;
+            document.getElementById('loaderText').textContent = 'Checking ' + ms.slice(0,7) + '...';
 
             try {
-              var mr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(mq) + '&queryType=Latest');
-              if (!mr.ok) continue;
-              var md = await mr.json();
-              if (!md.tweets || md.tweets.length === 0) continue;
+              var mo_res = await queuedFetch(WORKER_URL + '/search?query=' + encodeURIComponent(mq) + '&queryType=Latest');
+              if (!mo_res.ok) continue;
+              var mo_data = await mo_res.json();
+              if (!mo_data.tweets || mo_data.tweets.length === 0) continue;
 
-              var mTweets = md.tweets.slice();
-              var mc = md.next_cursor || md.cursor || null;
-              var mp = 0;
-              while (mc && mp < 5) {
-                mp++;
+              // Collect all pages of this month
+              var mTweets = mo_data.tweets.slice();
+              var mo_cur = mo_data.next_cursor || mo_data.cursor || null;
+              var mo_pg = 0;
+              while (mo_cur && mo_pg < 6) {
+                mo_pg++;
+                document.getElementById('loaderText').textContent = 'Collecting... (' + mTweets.length + ' posts)';
                 try {
-                  var mnr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(mq) + '&queryType=Latest&cursor=' + encodeURIComponent(mc));
-                  if (!mnr.ok) break;
-                  var mnd = await mnr.json();
-                  if (!mnd.tweets || mnd.tweets.length === 0) break;
-                  mTweets = mTweets.concat(mnd.tweets);
-                  mc = mnd.next_cursor || mnd.cursor || null;
+                  var mo_nr = await queuedFetch(WORKER_URL + '/search?query=' + encodeURIComponent(mq) + '&queryType=Latest&cursor=' + encodeURIComponent(mo_cur));
+                  if (!mo_nr.ok) break;
+                  var mo_nd = await mo_nr.json();
+                  if (!mo_nd.tweets || mo_nd.tweets.length === 0) break;
+                  mTweets = mTweets.concat(mo_nd.tweets);
+                  mo_cur = mo_nd.next_cursor || mo_nd.cursor || null;
                 } catch(e) { break; }
               }
-
               mTweets.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
               bestTweet = mTweets[0];
-              break; // found first month, stop
+              break;
             } catch(e) { continue; }
           }
-          break; // found first year, stop
-        } catch(e) { continue; }
+        }
       }
 
       // Fallback: deep paginate if date search found nothing
       if (!bestTweet) {
         document.getElementById('loaderText').textContent = 'Deep scanning...';
-        var fbq = 'from:' + username + ' -filter:replies';
-        var fb_r = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(fbq) + '&queryType=Latest');
-        if (!fb_r.ok) throw new Error('HTTP ' + fb_r.status);
-        var fb_d = await fb_r.json();
-        if (!fb_d.tweets || fb_d.tweets.length === 0) {
+        var fb_res = await queuedFetch(WORKER_URL + '/search?query=' + encodeURIComponent(baseQuery) + '&queryType=Latest');
+        if (!fb_res.ok) throw new Error('HTTP ' + fb_res.status);
+        var fb_data = await fb_res.json();
+        if (!fb_data.tweets || fb_data.tweets.length === 0) {
           stopLoader();
           setStatus('No original posts found for @' + username + '. Check the username.', 'error');
           btn.disabled = false;
           return;
         }
-        var fb_t = fb_d.tweets.slice();
-        var fb_c = fb_d.next_cursor || fb_d.cursor || null;
-        var fb_p = 0;
-        while (fb_c && fb_p < 20) {
-          fb_p++;
-          document.getElementById('loaderText').textContent = 'Scanning... (' + fb_t.length + ' posts found)';
+        var fb_t = fb_data.tweets.slice();
+        var fb_cur = fb_data.next_cursor || fb_data.cursor || null;
+        var fb_pg = 0;
+        while (fb_cur && fb_pg < 20) {
+          fb_pg++;
+          document.getElementById('loaderText').textContent = 'Deep scanning... (' + fb_t.length + ' posts)';
           try {
-            var fb_nr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(fbq) + '&queryType=Latest&cursor=' + encodeURIComponent(fb_c));
+            var fb_nr = await queuedFetch(WORKER_URL + '/search?query=' + encodeURIComponent(baseQuery) + '&queryType=Latest&cursor=' + encodeURIComponent(fb_cur));
             if (!fb_nr.ok) break;
             var fb_nd = await fb_nr.json();
             if (!fb_nd.tweets || fb_nd.tweets.length === 0) break;
             fb_t = fb_t.concat(fb_nd.tweets);
-            fb_c = fb_nd.next_cursor || fb_nd.cursor || null;
+            fb_cur = fb_nd.next_cursor || fb_nd.cursor || null;
           } catch(e) { break; }
         }
         fb_t.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
@@ -464,14 +482,15 @@
       }
 
       var oldest = bestTweet;
+      // Use uInfo to fill in any missing author fields
       var author = oldest.author || {};
-      var handle = author.userName || username;
-      var name = author.name || handle;
-      var profileImg = author.profilePicture || '';
-      var isVerified = author.isBlueVerified || false;
-      var followers = author.followers || 0;
-      var following = author.following || 0;
-      var bio = author.description || '';
+      var handle = author.userName || uInfo.userName || username;
+      var name = author.name || uInfo.name || handle;
+      var profileImg = author.profilePicture || uInfo.profilePicture || '';
+      var isVerified = author.isBlueVerified || uInfo.isBlueVerified || false;
+      var followers = author.followers || uInfo.followers || 0;
+      var following = author.following || uInfo.following || 0;
+      var bio = author.description || uInfo.description || '';
       var tweetUrl = oldest.url || ('https://x.com/'+handle+'/status/'+(oldest.id||''));
       var tweetText = oldest.text || '';
       var years = yearsAgo(oldest.createdAt);
