@@ -349,51 +349,103 @@
     startLoader();
 
     try {
-      // Strategy: search "from:username" with oldest sort
-      // twitterapi.io advanced search supports from: operator
-      // We'll fetch multiple pages to get to the earliest tweet
-      var query = 'from:' + username;
+      // Strategy: binary search through time to find first ever tweet
+      // Start from 2006 (Twitter launch) and work forward in chunks
+      var bestTweet = null;
 
-      // First get user profile to show info
-      var profileUrl = WORKER_URL + '/search?query=' + encodeURIComponent(query) + '&queryType=Latest';
-      var res = await fetch(profileUrl);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      var data = await res.json();
+      // Time windows to try - from Twitter launch year forward
+      var windows = [
+        {since:'2006-01-01', until:'2007-01-01'},
+        {since:'2007-01-01', until:'2008-01-01'},
+        {since:'2008-01-01', until:'2009-01-01'},
+        {since:'2009-01-01', until:'2010-01-01'},
+        {since:'2010-01-01', until:'2011-01-01'},
+        {since:'2011-01-01', until:'2012-01-01'},
+        {since:'2012-01-01', until:'2013-01-01'},
+        {since:'2013-01-01', until:'2014-01-01'},
+        {since:'2014-01-01', until:'2015-01-01'},
+        {since:'2015-01-01', until:'2016-01-01'},
+        {since:'2016-01-01', until:'2017-01-01'},
+        {since:'2017-01-01', until:'2018-01-01'},
+        {since:'2018-01-01', until:'2019-01-01'},
+        {since:'2019-01-01', until:'2020-01-01'},
+        {since:'2020-01-01', until:'2021-01-01'},
+        {since:'2021-01-01', until:'2022-01-01'},
+        {since:'2022-01-01', until:'2023-01-01'},
+        {since:'2023-01-01', until:'2024-01-01'},
+        {since:'2024-01-01', until:'2025-01-01'},
+        {since:'2025-01-01', until:'2026-01-01'},
+        {since:'2026-01-01', until:'2027-01-01'},
+      ];
 
-      if (!data.tweets || data.tweets.length === 0) {
+      document.getElementById('loaderText').textContent = 'Scanning Twitter history...';
+
+      for (var w = 0; w < windows.length; w++) {
+        var win = windows[w];
+        var query = 'from:' + username + ' since:' + win.since + ' until:' + win.until;
+        document.getElementById('loaderText').textContent = 'Checking ' + win.since.slice(0,4) + '...';
+
+        var res = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(query) + '&queryType=Latest');
+        if (!res.ok) continue;
+        var data = await res.json();
+        if (!data.tweets || data.tweets.length === 0) continue;
+
+        // Found tweets in this year — get all of them and find oldest
+        var yearTweets = data.tweets.slice();
+        var cursor = data.next_cursor || data.cursor || null;
+        var pages = 0;
+        while (cursor && pages < 5) {
+          pages++;
+          var nr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(query) + '&queryType=Latest&cursor=' + encodeURIComponent(cursor));
+          if (!nr.ok) break;
+          var nd = await nr.json();
+          if (!nd.tweets || nd.tweets.length === 0) break;
+          yearTweets = yearTweets.concat(nd.tweets);
+          cursor = nd.next_cursor || nd.cursor || null;
+        }
+
+        // Sort oldest first
+        yearTweets.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
+        bestTweet = yearTweets[0];
+
+        // Now narrow down within this year by month
+        var foundYear = win.since.slice(0,4);
+        for (var m = 1; m <= 12; m++) {
+          var ms = foundYear + '-' + (m<10?'0'+m:m) + '-01';
+          var me = m < 12 ? foundYear + '-' + ((m+1)<10?'0'+(m+1):(m+1)) + '-01' : (parseInt(foundYear)+1) + '-01-01';
+          var mq = 'from:' + username + ' since:' + ms + ' until:' + me;
+          var mr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(mq) + '&queryType=Latest');
+          if (!mr.ok) continue;
+          var md = await mr.json();
+          if (!md.tweets || md.tweets.length === 0) continue;
+          var mTweets = md.tweets.slice();
+          var mc = md.next_cursor || md.cursor || null;
+          var mp = 0;
+          while(mc && mp < 5){
+            mp++;
+            var mnr = await fetch(WORKER_URL + '/search?query='+encodeURIComponent(mq)+'&queryType=Latest&cursor='+encodeURIComponent(mc));
+            if(!mnr.ok) break;
+            var mnd = await mnr.json();
+            if(!mnd.tweets||mnd.tweets.length===0) break;
+            mTweets = mTweets.concat(mnd.tweets);
+            mc = mnd.next_cursor||mnd.cursor||null;
+          }
+          mTweets.sort(function(a,b){return new Date(a.createdAt||0)-new Date(b.createdAt||0);});
+          bestTweet = mTweets[0];
+          document.getElementById('loaderText').textContent = 'Narrowing to ' + ms.slice(0,7) + '...';
+          break; // found the first month, stop
+        }
+        break; // found the first year, stop
+      }
+
+      if (!bestTweet) {
         stopLoader();
         setStatus('No tweets found for @' + username + '. Check the username.', 'error');
         btn.disabled = false;
         return;
       }
 
-      // Now paginate to find the oldest tweet
-      // We'll do up to 8 pages (160 tweets) to find earliest
-      var allTweets = data.tweets.slice();
-      var cursor = data.next_cursor || data.cursor || null;
-      var maxPages = 7;
-      var page = 0;
-
-      document.getElementById('loaderText').textContent = 'Found tweets, going deeper...';
-
-      while (cursor && page < maxPages) {
-        page++;
-        var nextUrl = WORKER_URL + '/search?query=' + encodeURIComponent(query) + '&queryType=Latest&cursor=' + encodeURIComponent(cursor);
-        var nextRes = await fetch(nextUrl);
-        if (!nextRes.ok) break;
-        var nextData = await nextRes.json();
-        if (!nextData.tweets || nextData.tweets.length === 0) break;
-        allTweets = allTweets.concat(nextData.tweets);
-        cursor = nextData.next_cursor || nextData.cursor || null;
-        document.getElementById('loaderText').textContent = 'Searched ' + allTweets.length + ' tweets... going deeper';
-      }
-
-      // Find oldest by createdAt
-      allTweets.sort(function(a, b) {
-        return new Date(a.createdAt||0) - new Date(b.createdAt||0);
-      });
-
-      var oldest = allTweets[0];
+      var oldest = bestTweet;
       var author = oldest.author || {};
       var handle = author.userName || username;
       var name = author.name || handle;
