@@ -357,7 +357,7 @@
       for (var yr = 2006; yr <= currentYear; yr++) {
         var since = yr + '-01-01';
         var until = (yr + 1) + '-01-01';
-        var dq = 'from:' + username + ' since:' + since + ' until:' + until;
+        var dq = 'from:' + username + ' -filter:replies since:' + since + ' until:' + until;
         document.getElementById('loaderText').textContent = 'Scanning ' + yr + '...';
 
         try {
@@ -391,7 +391,7 @@
             var me = m < 12
               ? yr + '-' + ((m + 1) < 10 ? '0' + (m + 1) : (m + 1)) + '-01'
               : (yr + 1) + '-01-01';
-            var mq = 'from:' + username + ' since:' + ms + ' until:' + me;
+            var mq = 'from:' + username + ' -filter:replies since:' + ms + ' until:' + me;
             document.getElementById('loaderText').textContent = 'Narrowing to ' + ms.slice(0, 7) + '...';
 
             try {
@@ -421,15 +421,44 @@
             } catch(e) { continue; }
           }
           break; // found first year, stop
-        } catch(e) {
-          // If any error stop date search
-          break;
+        } catch(e) { continue; }
+      }
+
+      // Fallback: deep paginate if date search found nothing
+      if (!bestTweet) {
+        document.getElementById('loaderText').textContent = 'Deep scanning...';
+        var fbq = 'from:' + username + ' -filter:replies';
+        var fb_r = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(fbq) + '&queryType=Latest');
+        if (!fb_r.ok) throw new Error('HTTP ' + fb_r.status);
+        var fb_d = await fb_r.json();
+        if (!fb_d.tweets || fb_d.tweets.length === 0) {
+          stopLoader();
+          setStatus('No original posts found for @' + username + '. Check the username.', 'error');
+          btn.disabled = false;
+          return;
         }
+        var fb_t = fb_d.tweets.slice();
+        var fb_c = fb_d.next_cursor || fb_d.cursor || null;
+        var fb_p = 0;
+        while (fb_c && fb_p < 20) {
+          fb_p++;
+          document.getElementById('loaderText').textContent = 'Scanning... (' + fb_t.length + ' posts found)';
+          try {
+            var fb_nr = await fetch(WORKER_URL + '/search?query=' + encodeURIComponent(fbq) + '&queryType=Latest&cursor=' + encodeURIComponent(fb_c));
+            if (!fb_nr.ok) break;
+            var fb_nd = await fb_nr.json();
+            if (!fb_nd.tweets || fb_nd.tweets.length === 0) break;
+            fb_t = fb_t.concat(fb_nd.tweets);
+            fb_c = fb_nd.next_cursor || fb_nd.cursor || null;
+          } catch(e) { break; }
+        }
+        fb_t.sort(function(a,b){ return new Date(a.createdAt||0) - new Date(b.createdAt||0); });
+        bestTweet = fb_t[0];
       }
 
       if (!bestTweet) {
         stopLoader();
-        setStatus('No tweets found for @' + username + '. Check the username.', 'error');
+        setStatus('Could not find posts for @' + username + '.', 'error');
         btn.disabled = false;
         return;
       }
@@ -515,4 +544,3 @@
 </script>
 </body>
 </html>
-
