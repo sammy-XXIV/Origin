@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORIGIN — Your First Tweet</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --coral: #FF6B6B;
+    --gold: #FFD93D;
+    --teal: #4ECDC4;
+    --deep: #0A0F1E;
+    --glass: rgba(255,255,255,0.06);
+    --glass-border: rgba(255,255,255,0.11);
+    --text: #F0EDE8;
+    --muted: rgba(240,237,232,0.45);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    background: var(--deep);
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 40px 16px 80px;
+    overflow-x: hidden;
+  }
+
+  /* Starfield */
+  .stars {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background:
+      radial-gradient(1px 1px at 10% 20%, rgba(255,255,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 30% 60%, rgba(255,255,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 50% 10%, rgba(255,255,255,0.6) 0%, transparent 100%),
+      radial-gradient(1px 1px at 70% 80%, rgba(255,255,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 90% 40%, rgba(255,255,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 20% 90%, rgba(255,255,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 60% 50%, rgba(255,255,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 80% 15%, rgba(255,255,255,0.6) 0%, transparent 100%),
+      radial-gradient(1px 1px at 40% 35%, rgba(255,255,255,0.4) 0%, transparent 100%),
+      radial-gradient(1px 1px at 15% 55%, rgba(255,255,255,0.3) 0%, transparent 100%),
+      radial-gradient(1px 1px at 85% 70%, rgba(255,255,255,0.5) 0%, transparent 100%),
+      radial-gradient(1px 1px at 55% 85%, rgba(255,255,255,0.4) 0%, transparent 100%);
+  }
+  .glow-orb {
+    position: fixed; border-radius: 50%; pointer-events: none; z-index: 0;
+    filter: blur(80px);
+  }
+  .orb1 { width: 500px; height: 500px; top: -150px; left: -100px; background: radial-gradient(circle, rgba(255,107,107,0.12), transparent 70%); animation: orbFloat 14s ease-in-out infinite; }
+  .orb2 { width: 400px; height: 400px; bottom: -100px; right: -80px; background: radial-gradient(circle, rgba(78,205,196,0.1), transparent 70%); animation: orbFloat 18s ease-in-out infinite reverse; }
+  .orb3 { width: 300px; height: 300px; top: 50%; left: 50%; transform: translate(-50%,-50%); background: radial-gradient(circle, rgba(255,217,61,0.06), transparent 70%); animation: orbFloat 22s ease-in-out infinite; }
+  @keyframes orbFloat { 0%,100%{transform:translate(0,0)} 50%{transform:translate(30px,20px)} }
+
+  .container { position: relative; z-index: 1; width: 100%; max-width: 560px; }
+
+  /* Header */
+  .header { text-align: center; margin-bottom: 40px; animation: fadeDown 0.6s ease both; }
+  .logo {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 80px; letter-spacing: 8px; line-height: 1;
+    background: linear-gradient(135deg, var(--gold) 0%, var(--coral) 50%, var(--teal) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .tagline { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .sub { font-size: 13px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+
+  /* Search */
+  .search-box {
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(24px); border-radius: 22px; padding: 24px;
+    margin-bottom: 28px; animation: fadeUp 0.5s ease 0.15s both;
+  }
+  .input-row { display: flex; gap: 10px; }
+  .at-prefix {
+    background: rgba(255,255,255,0.06); border: 1px solid var(--glass-border);
+    border-radius: 14px 0 0 14px; border-right: none;
+    padding: 14px 10px 14px 16px; font-size: 16px; color: var(--muted);
+    display: flex; align-items: center;
+  }
+  .username-input {
+    flex: 1; background: rgba(255,255,255,0.06); border: 1px solid var(--glass-border);
+    border-left: none; border-radius: 0 14px 14px 0;
+    padding: 14px 16px; color: var(--text);
+    font-family: 'DM Sans', sans-serif; font-size: 15px; outline: none;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .username-input:focus { border-color: var(--gold); background: rgba(255,255,255,0.09); }
+  .username-input::placeholder { color: var(--muted); }
+  .btn-dig {
+    background: linear-gradient(135deg, var(--gold), #ff8e53);
+    border: none; border-radius: 14px; padding: 14px 22px;
+    color: #0A0F1E; font-family: 'Bebas Neue', sans-serif; font-size: 18px;
+    letter-spacing: 2px; cursor: pointer; font-weight: 700;
+    transition: transform 0.15s, opacity 0.15s; white-space: nowrap;
+  }
+  .btn-dig:hover { transform: translateY(-1px); opacity: 0.9; }
+  .btn-dig:active { transform: scale(0.97); }
+  .btn-dig:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+  .examples { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .example-label { font-size: 11px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .example-chip {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);
+    border-radius: 12px; padding: 4px 10px; font-size: 12px; color: var(--muted);
+    cursor: pointer; transition: all 0.2s; font-family: 'DM Sans', sans-serif;
+  }
+  .example-chip:hover { color: var(--gold); border-color: var(--gold); background: rgba(255,217,61,0.08); }
+
+  /* Status */
+  .status { text-align: center; font-size: 13px; margin-bottom: 20px; min-height: 18px; color: var(--muted); }
+  .status.loading { color: var(--gold); }
+  .status.error { color: var(--coral); }
+
+  /* Loader */
+  .loader { display: none; flex-direction: column; align-items: center; gap: 16px; margin: 30px 0; }
+  .loader.active { display: flex; }
+  .loader-ring {
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.08);
+    border-top-color: var(--gold);
+    border-right-color: var(--coral);
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .loader-text { font-size: 13px; color: var(--muted); letter-spacing: 1px; animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:1} }
+
+  /* Result card */
+  .result-wrap { animation: riseUp 0.6s cubic-bezier(0.22,1,0.36,1) both; }
+  @keyframes riseUp { from{opacity:0;transform:translateY(30px) scale(0.97)} to{opacity:1;transform:translateY(0) scale(1)} }
+
+  .time-badge {
+    text-align: center; margin-bottom: 16px;
+  }
+  .time-badge-inner {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(255,217,61,0.1); border: 1px solid rgba(255,217,61,0.25);
+    border-radius: 20px; padding: 6px 16px;
+    font-size: 12px; color: var(--gold); letter-spacing: 1px; text-transform: uppercase;
+  }
+
+  .tweet-card {
+    background: var(--glass); border: 1px solid var(--glass-border);
+    backdrop-filter: blur(24px); border-radius: 24px; padding: 24px;
+    position: relative; overflow: hidden;
+  }
+  .tweet-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--gold), var(--coral), var(--teal));
+    border-radius: 24px 24px 0 0;
+  }
+  .tweet-card::after {
+    content: '"';
+    position: absolute; bottom: -20px; right: 16px;
+    font-size: 120px; color: rgba(255,255,255,0.03);
+    font-family: Georgia, serif; line-height: 1; pointer-events: none;
+  }
+
+  .profile-row { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .avatar {
+    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+    border: 2px solid rgba(255,217,61,0.3);
+  }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar-fallback {
+    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Bebas Neue', sans-serif; font-size: 20px;
+    border: 2px solid rgba(255,217,61,0.3);
+  }
+  .profile-info { flex: 1; }
+  .profile-name { font-weight: 700; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+  .verified { color: var(--teal); font-size: 14px; }
+  .profile-handle { font-size: 13px; color: var(--muted); }
+  .profile-meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+  .tweet-body { font-size: 16px; line-height: 1.7; color: var(--text); margin-bottom: 20px; word-break: break-word; }
+
+  .tweet-footer { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+  .tweet-date-full { font-size: 12px; color: var(--muted); }
+  .tweet-stats { display: flex; gap: 18px; }
+  .stat { display: flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); }
+  .stat-val { font-weight: 700; color: var(--text); font-size: 14px; }
+
+  .open-btn {
+    display: block; text-align: center; margin-top: 18px;
+    background: linear-gradient(135deg, rgba(255,217,61,0.12), rgba(255,107,107,0.12));
+    border: 1px solid rgba(255,217,61,0.25); border-radius: 14px;
+    padding: 12px; color: var(--gold); font-size: 13px; font-weight: 600;
+    text-decoration: none; letter-spacing: 1px; text-transform: uppercase;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .open-btn:hover { background: linear-gradient(135deg, rgba(255,217,61,0.2), rgba(255,107,107,0.2)); border-color: rgba(255,217,61,0.5); }
+
+  /* Years ago pill */
+  .years-ago {
+    text-align: center; margin-top: 20px;
+    font-size: 13px; color: var(--muted);
+  }
+  .years-ago strong { color: var(--coral); font-size: 22px; font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; }
+
+  /* Share */
+  .share-row { display: flex; gap: 8px; margin-top: 14px; }
+  .share-btn {
+    flex: 1; padding: 10px; border: 1px solid var(--glass-border);
+    border-radius: 12px; background: rgba(255,255,255,0.05);
+    color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 12px;
+    cursor: pointer; transition: all 0.2s; text-align: center;
+  }
+  .share-btn:hover { border-color: var(--teal); color: var(--teal); background: rgba(78,205,196,0.08); }
+
+  @keyframes fadeDown { from{opacity:0;transform:translateY(-16px)} to{opacity:1;transform:translateY(0)} }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  @media (max-width: 500px) {
+    .logo { font-size: 60px; }
+    .input-row { flex-direction: column; }
+    .at-prefix { border-radius: 14px 14px 0 0; border-right: 1px solid var(--glass-border); border-bottom: none; padding: 10px 16px; }
+    .username-input { border-radius: 0; border-left: 1px solid var(--glass-border); border-top: none; }
+    .btn-dig { border-radius: 0 0 14px 14px; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<div class="glow-orb orb1"></div>
+<div class="glow-orb orb2"></div>
+<div class="glow-orb orb3"></div>
+
+<div class="container">
+  <div class="header">
+    <div class="logo">ORIGIN</div>
+    <div class="tagline">Where it all began</div>
+    <div class="sub">Enter any X username to uncover their very first tweet 🐣</div>
+    <div style="margin-top:10px;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,217,61,0.5)">Made by <span style="color:var(--gold);font-family:Bebas Neue,sans-serif;font-size:14px;letter-spacing:3px">SAMMY</span></div>
+  </div>
+
+  <div class="search-box">
+    <div class="input-row">
+      <div class="at-prefix">@</div>
+      <input class="username-input" id="usernameInput" type="text" placeholder="username" autocomplete="off" autocorrect="off" autocapitalize="off" />
+      <button class="btn-dig" id="digBtn" onclick="findOrigin()">DIG</button>
+    </div>
+    <div class="examples">
+      <span class="example-label">Try:</span>
+      <span class="example-chip" onclick="tryUser('elonmusk')">@elonmusk</span>
+      <span class="example-chip" onclick="tryUser('naval')">@naval</span>
+      <span class="example-chip" onclick="tryUser('VitalikButerin')">@VitalikButerin</span>
+      <span class="example-chip" onclick="tryUser('sama')">@sama</span>
+    </div>
+  </div>
+
+  <div class="status" id="status"></div>
+  <div class="loader" id="loader">
+    <div class="loader-ring"></div>
+    <div class="loader-text" id="loaderText">Digging through the archives...</div>
+  </div>
+  <div id="resultContainer"></div>
+</div>
+
+<script>
+  const WORKER_URL = 'https://restless-bonus-b3a9.samsonsamuel531.workers.dev';
+
+  function tryUser(handle) {
+    document.getElementById('usernameInput').value = handle;
+    findOrigin();
+  }
+
+  function setStatus(msg, type) {
+    var s = document.getElementById('status');
+    s.textContent = msg;
+    s.className = 'status ' + (type || '');
+  }
+
+  function formatNum(n) {
+    n = parseInt(n) || 0;
+    if (n >= 1000000) return (n/1000000).toFixed(1)+'M';
+    if (n >= 1000) return (n/1000).toFixed(1)+'K';
+    return String(n);
+  }
+
+  function formatDateFull(dateStr) {
+    var d = new Date(dateStr);
+    if (isNaN(d)) return dateStr || '';
+    return d.toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'}) +
+           ' at ' + d.toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
+  }
+
+  function yearsAgo(dateStr) {
+    var d = new Date(dateStr);
+    if (isNaN(d)) return null;
+    var diff = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
+    return diff.toFixed(1);
+  }
+
+  function gradientFor(handle) {
+    var colors = [['#FF6B6B','#FFD93D'],['#4ECDC4','#44A3AA'],['#ff8e53','#4ECDC4'],['#FFD93D','#FF6B6B']];
+    var hash = 0;
+    for (var i = 0; i < (handle||'').length; i++) hash += handle.charCodeAt(i);
+    var p = colors[hash % colors.length];
+    return 'linear-gradient(135deg,'+p[0]+','+p[1]+')';
+  }
+
+  function getInitials(name) {
+    return (name||'?').split(' ').map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase();
+  }
+
+  var loaderPhrases = [
+    'Digging through the archives...',
+    'Travelling back in time...',
+    'Searching the very beginning...',
+    'Unearthing digital history...',
+    'Almost there...'
+  ];
+  var loaderInterval = null;
+
+  function startLoader() {
+    var i = 0;
+    document.getElementById('loader').classList.add('active');
+    document.getElementById('loaderText').textContent = loaderPhrases[0];
+    loaderInterval = setInterval(function() {
+      i = (i + 1) % loaderPhrases.length;
+      document.getElementById('loaderText').textContent = loaderPhrases[i];
+    }, 2000);
+  }
+
+  function stopLoader() {
+    clearInterval(loaderInterval);
+    document.getElementById('loader').classList.remove('active');
+  }
+
+  async function findOrigin() {
+    var username = document.getElementById('usernameInput').value.trim().replace('@','');
+    if (!username) { setStatus('Enter a username first.', 'error'); return; }
+
+    var btn = document.getElementById('digBtn');
+    btn.disabled = true;
+    document.getElementById('resultContainer').innerHTML = '';
+    setStatus('', '');
+    startLoader();
+
+    try {
+      // Strategy: search "from:username" with oldest sort
+      // twitterapi.io advanced search supports from: operator
+      // We'll fetch multiple pages to get to the earliest tweet
+      var query = 'from:' + username;
+
+      // First get user profile to show info
+      var profileUrl = WORKER_URL + '/search?query=' + encodeURIComponent(query) + '&queryType=Latest';
+      var res = await fetch(profileUrl);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var data = await res.json();
+
+      if (!data.tweets || data.tweets.length === 0) {
+        stopLoader();
+        setStatus('No tweets found for @' + username + '. Check the username.', 'error');
+        btn.disabled = false;
+        return;
+      }
+
+      // Now paginate to find the oldest tweet
+      // We'll do up to 8 pages (160 tweets) to find earliest
+      var allTweets = data.tweets.slice();
+      var cursor = data.next_cursor || data.cursor || null;
+      var maxPages = 7;
+      var page = 0;
+
+      document.getElementById('loaderText').textContent = 'Found tweets, going deeper...';
+
+      while (cursor && page < maxPages) {
+        page++;
+        var nextUrl = WORKER_URL + '/search?query=' + encodeURIComponent(query) + '&queryType=Latest&cursor=' + encodeURIComponent(cursor);
+        var nextRes = await fetch(nextUrl);
+        if (!nextRes.ok) break;
+        var nextData = await nextRes.json();
+        if (!nextData.tweets || nextData.tweets.length === 0) break;
+        allTweets = allTweets.concat(nextData.tweets);
+        cursor = nextData.next_cursor || nextData.cursor || null;
+        document.getElementById('loaderText').textContent = 'Searched ' + allTweets.length + ' tweets... going deeper';
+      }
+
+      // Find oldest by createdAt
+      allTweets.sort(function(a, b) {
+        return new Date(a.createdAt||0) - new Date(b.createdAt||0);
+      });
+
+      var oldest = allTweets[0];
+      var author = oldest.author || {};
+      var handle = author.userName || username;
+      var name = author.name || handle;
+      var profileImg = author.profilePicture || '';
+      var isVerified = author.isBlueVerified || false;
+      var followers = author.followers || 0;
+      var following = author.following || 0;
+      var bio = author.description || '';
+      var tweetUrl = oldest.url || ('https://x.com/'+handle+'/status/'+(oldest.id||''));
+      var tweetText = oldest.text || '';
+      var years = yearsAgo(oldest.createdAt);
+
+      var safeText = tweetText
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/(https?:\/\/\S+)/g,'<span style="color:var(--teal)">$1</span>')
+        .replace(/(#\w+)/g,'<span style="color:var(--gold)">$1</span>')
+        .replace(/(@\w+)/g,'<span style="color:var(--coral)">$1</span>');
+
+      var avatarHtml = profileImg
+        ? '<div class="avatar"><img src="'+profileImg+'" onerror="this.parentElement.outerHTML=\'<div class=avatar-fallback style=background:'+gradientFor(handle)+'>'+getInitials(name)+'</div>\'" /></div>'
+        : '<div class="avatar-fallback" style="background:'+gradientFor(handle)+'">'+getInitials(name)+'</div>';
+
+      var yearsHtml = years ? '<div class="years-ago">That was <strong>'+years+' years ago</strong> 🤯</div>' : '';
+
+      var shareText = 'My first tweet on X was ' + years + ' years ago! Check yours at ORIGIN 🐣';
+      var shareUrl = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText);
+
+      stopLoader();
+      setStatus('');
+
+      document.getElementById('resultContainer').innerHTML =
+        '<div class="result-wrap">'+
+          '<div class="time-badge"><div class="time-badge-inner">🐣 First Ever Tweet</div></div>'+
+          '<div class="tweet-card">'+
+            '<div class="profile-row">'+
+              avatarHtml+
+              '<div class="profile-info">'+
+                '<div class="profile-name">'+name+(isVerified?' <span class="verified">✓</span>':'')+' </div>'+
+                '<div class="profile-handle">@'+handle+'</div>'+
+                '<div class="profile-meta">'+formatNum(followers)+' followers · '+formatNum(following)+' following</div>'+
+              '</div>'+
+            '</div>'+
+            '<div class="tweet-body">'+safeText+'</div>'+
+            '<div class="tweet-footer">'+
+              '<div class="tweet-date-full">'+formatDateFull(oldest.createdAt)+'</div>'+
+              '<div class="tweet-stats">'+
+                '<div class="stat">❤️ <span class="stat-val">'+formatNum(oldest.likeCount)+'</span></div>'+
+                '<div class="stat">🔁 <span class="stat-val">'+formatNum(oldest.retweetCount)+'</span></div>'+
+              '</div>'+
+            '</div>'+
+            '<a class="open-btn" href="'+tweetUrl+'" target="_blank">↗ Open Original Tweet on X</a>'+
+          '</div>'+
+          yearsHtml+
+          '<div class="share-row">'+
+            '<button class="share-btn" onclick="window.open(\''+shareUrl+'\',\'_blank\')">🐦 Share on X</button>'+
+            '<button class="share-btn" onclick="copyLink(\''+tweetUrl+'\')">🔗 Copy Link</button>'+
+          '</div>'+
+        '</div>';
+
+    } catch(err) {
+      stopLoader();
+      setStatus('Error: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function copyLink(url) {
+    navigator.clipboard.writeText(url).then(function() {
+      setStatus('✓ Link copied!', '');
+      setTimeout(function(){ setStatus('',''); }, 2000);
+    });
+  }
+
+  document.getElementById('usernameInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') findOrigin();
+  });
+</script>
+</body>
+</html>
